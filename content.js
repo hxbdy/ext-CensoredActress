@@ -56,9 +56,17 @@ const CARD_WALK_LIMIT = 8;
 // 共通
 // ---------------------------------------------------------
 
-function escapeHtml(text) {
-    return String(text).replace(/[&<>"']/g, c =>
-        ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+// 要素を作る。attrs は属性として設定し、children は要素か文字列（文字列はテキストとして入る）。
+// innerHTML を使わないので、外部から来た文字列が HTML として解釈されることはない
+function el(tag, attrs = {}, ...children) {
+    const node = document.createElement(tag);
+    Object.entries(attrs).forEach(([k, v]) => node.setAttribute(k, v));
+    node.append(...children);
+    return node;
+}
+
+function spinner() {
+    return el("span", { class: "loading-spinner" });
 }
 
 // FANZA の URL をアフィリエイト経由のリンクに包む
@@ -96,7 +104,7 @@ function ensureStyle() {
     if (document.getElementById("my-actress-style")) return;
     const style = document.createElement("style");
     style.id = "my-actress-style";
-    style.innerHTML = `
+    style.textContent = `
         .my-actress-link {
             color: #0073e6 !important;
             text-decoration: none !important;
@@ -286,20 +294,24 @@ async function fetchWikiInfo(productID, currentCid) {
 
 function actressSearchLink(name) {
     const searchUrl = affiliateUrl(`${DMM_ORIGIN}/list/?key=${encodeURIComponent(name)}`);
-    return `<a href="${searchUrl}" class="my-actress-link">${escapeHtml(name)}</a>`;
+    return el("a", { href: searchUrl, class: "my-actress-link" }, name);
 }
 
-// 出演者ごとに「名前」、その下に「素人作品のサムネ枠」を並べるHTML。
+// 出演者ごとに「名前」、その下に「素人作品のサムネ枠」を並べる。
 // 素人作品を引ける出演者が1人もいなければ、従来どおり名前を横に並べるだけにする
-function castHtml(actresses) {
+function castNodes(actresses, currentCid) {
     if (!actresses.some(a => a.tag)) {
-        return actresses.map(a => actressSearchLink(a.name)).join("");
+        return actresses.map(a => actressSearchLink(a.name));
     }
-    return actresses.map(a =>
-        `<div class="my-cast-block">${actressSearchLink(a.name)}`
-      + (a.tag ? `<div class="my-works-grid"><span class="loading-spinner"></span></div>` : "")
-      + `</div>`
-    ).join("");
+    return actresses.map(a => {
+        const block = el("div", { class: "my-cast-block" }, actressSearchLink(a.name));
+        if (a.tag) {
+            const grid = el("div", { class: "my-works-grid" }, spinner());
+            block.append(grid);
+            renderActressWorks(grid, a.tag, currentCid);
+        }
+        return block;
+    });
 }
 
 // 既存の「出演者」行の値セルを返す（無ければ null）
@@ -317,21 +329,19 @@ function ensureCastCell() {
     const tbody = document.querySelector("table tbody");
     if (!tbody) return null;
     console.log("➕ 出演者枠を新規作成します。");
-    const newRow = document.createElement("tr");
-    newRow.innerHTML = `
-        <td align="right" valign="top" class="nw">出演者：</td>
-        <td style="font-weight: bold; background-color: #fff9c4; padding: 2px 5px;"></td>
-    `;
-    tbody.appendChild(newRow);
-    return newRow.querySelector('td:last-child');
+    const valueCell = el("td", { style: "font-weight: bold; background-color: #fff9c4; padding: 2px 5px;" });
+    tbody.appendChild(el("tr", {},
+        el("td", { align: "right", valign: "top", class: "nw" }, "出演者："),
+        valueCell));
+    return valueCell;
 }
 
 function fillActressToDMM(actresses, currentCid) {
     if (!actresses || !actresses.length) {
         console.log("⚠️ 有効な女優名ではないため、上書きをスキップします。");
         const cell = findCastCell();
-        if (cell && cell.innerHTML.includes("取得中")) {
-            cell.innerHTML = "";
+        if (cell && cell.textContent.includes("取得中")) {
+            cell.replaceChildren();
         }
         return;
     }
@@ -340,11 +350,7 @@ function fillActressToDMM(actresses, currentCid) {
     if (!targetCell) return;
 
     ensureStyle();
-    targetCell.innerHTML = castHtml(actresses);
-    const grids = targetCell.querySelectorAll(".my-works-grid");
-    actresses.filter(a => a.tag).forEach((a, i) => {
-        if (grids[i]) renderActressWorks(grids[i], a.tag, currentCid);
-    });
+    targetCell.replaceChildren(...castNodes(actresses, currentCid));
 }
 
 function showLoading() {
@@ -359,7 +365,7 @@ function showLoading() {
     const targetCell = existing || ensureCastCell();
     if (!targetCell) return false;
     ensureStyle();
-    targetCell.innerHTML = `取得中... <span class="loading-spinner"></span>`;
+    targetCell.replaceChildren("取得中... ", spinner());
     return true;
 }
 
@@ -508,19 +514,20 @@ async function renderActressWorks(grid, tag, currentCid) {
             .slice(0, WORKS_SHOW_MAX);
         if (!grid.isConnected) return;
 
-        grid.innerHTML = works.map(w => {
-            const title = escapeHtml(w.title || w.cid);
-            return `<a href="${amateurContentUrl(w.cid)}" title="${title}">`
-                 + `<img src="${amateurThumbUrl(w.cid)}" alt="${title}" loading="lazy"`
-                 + ` width="${WORK_THUMB_SIZE}" height="${WORK_THUMB_SIZE}"></a>`;
-        }).join("");
-        // 画像が無い作品は枠ごと消す
-        grid.querySelectorAll("img").forEach(img => {
-            img.addEventListener("error", () => img.parentElement && img.parentElement.remove(), { once: true });
-        });
+        grid.replaceChildren(...works.map(w => {
+            const title = w.title || w.cid;
+            const img = el("img", {
+                src: amateurThumbUrl(w.cid), alt: title, loading: "lazy",
+                width: WORK_THUMB_SIZE, height: WORK_THUMB_SIZE,
+            });
+            const link = el("a", { href: amateurContentUrl(w.cid), title }, img);
+            // 画像が無い作品は枠ごと消す
+            img.addEventListener("error", () => link.remove(), { once: true });
+            return link;
+        }));
     } catch (e) {
         console.error("❌ " + e.message);
-        grid.innerHTML = "";
+        grid.replaceChildren();
     }
 }
 
@@ -681,17 +688,14 @@ function ensureBestFilterPanel() {
     if (existing) existing.remove();
 
     ensureStyle();
-    const panel = document.createElement("div");
-    panel.id = BEST_FILTER_PANEL_ID;
-    panel.className = "text-xs flex items-center shrink-0";
-    panel.innerHTML =
-        `<button type="button" class="my-best-toggle" aria-pressed="false">`
-      +   `<span class="my-best-switch"></span>`
-      +   `<span>BEST・ベスト除外</span>`
-      +   `<span class="my-best-state">OFF</span>`
-      + `</button>`
-      + `<span class="my-best-count"></span>`;
-    panel.querySelector(".my-best-toggle").addEventListener("click", () => {
+    const toggle = el("button", { type: "button", class: "my-best-toggle", "aria-pressed": "false" },
+        el("span", { class: "my-best-switch" }),
+        el("span", {}, "BEST・ベスト除外"),
+        el("span", { class: "my-best-state" }, "OFF"));
+    const panel = el("div", { id: BEST_FILTER_PANEL_ID, class: "text-xs flex items-center shrink-0" },
+        toggle,
+        el("span", { class: "my-best-count" }));
+    toggle.addEventListener("click", () => {
         saveHideBest(!loadHideBest());
         applyBestFilter();
     });
