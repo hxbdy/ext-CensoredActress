@@ -7,7 +7,8 @@
     "128": "icon.png"
   },
   "background": {
-    "service_worker": "background.js"
+    "service_worker": "background.js",
+    "scripts": ["background.js"]
   },
   "content_scripts": [
     {
@@ -19,5 +20,17 @@
   "host_permissions": [
     "https://video.dmm.co.jp/*",
     "https://av-wiki.net/*"
-  ]
+  ],
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "{b4649f68-c6c7-4dcf-81b8-b2d3561b585a}",
+      "strict_min_version": "140.0",
+      "data_collection_permissions": {
+        "required": ["browsingActivity"]
+      }
+    },
+    "gecko_android": {
+      "strict_min_version": "142.0"
+    }
+  }
 }
