@@ -1,0 +1,8 @@
+{
+  "extName": {
+    "message": "DMM Cast Auto-Filler"
+  },
+  "extDescription": {
+    "message": "DMM動画の作品ページで、空欄の出演者欄をav-wikiの情報で補完します。一覧ページではBEST・ベスト作品を非表示にできます。"
+  }
+}

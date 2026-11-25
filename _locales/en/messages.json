@@ -1,0 +1,8 @@
+{
+  "extName": {
+    "message": "DMM Cast Auto-Filler"
+  },
+  "extDescription": {
+    "message": "Fills in the empty cast field on DMM video pages using av-wiki. On list pages, you can hide BEST compilation titles."
+  }
+}
